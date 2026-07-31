@@ -1,0 +1,26 @@
+services:
+  - type: worker
+    name: polymarket-whale-bot
+    runtime: docker
+    plan: starter
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: MIN_PNL_USD
+        value: "50000"
+      - key: LEADERBOARD_LIMIT
+        value: "1000"
+      - key: TRADE_MIN_USDC
+        value: "10000"
+      - key: POLL_SECONDS
+        value: "60"
+      - key: LEADERBOARD_REFRESH_SECONDS
+        value: "3600"
+      - key: DATABASE_PATH
+        value: /data/polymarket_bot.sqlite3
+    disk:
+      name: polymarket-bot-data
+      mountPath: /data
+      sizeGB: 1

@@ -134,59 +134,48 @@ class TelegramClient:
         }
         self.http.get_json(f"{self.base_url}/sendMessage", params)
 
-    def get_updates(self) -> Any:
+    def get_updates(self):
         return self.http.get_json(f"{self.base_url}/getUpdates")
-    def handle_commands(
-        telegram,
-        store
-):
+def handle_commands(telegram, store):
 
-        updates = telegram.get_updates()
+    updates = telegram.get_updates()
 
-        for update in updates.get("result", []):
+    for update in updates.get("result", []):
 
-            message = update.get("message")
+        message = update.get("message")
 
-            if not message:
+        if not message:
+            continue
+
+        text = message.get("text", "")
+        chat_id = str(message["chat"]["id"])
+
+
+        if text.startswith("/track"):
+
+            parts = text.split()
+
+            if len(parts) < 2:
+                telegram.send_message(
+                    chat_id,
+                    "Usage:\n/track WALLET"
+                )
                 continue
 
 
-            text = message.get("text","")
+            wallet = parts[1].lower()
 
-            chat_id = str(
-                message["chat"]["id"]
+
+            store.add_user_wallet(
+                chat_id,
+                wallet
             )
 
 
-            if text.startswith("/track"):
-
-                parts = text.split()
-
-
-                if len(parts) < 2:
-
-                    telegram.send_message(
-                        chat_id,
-                        "Usage:\n/track WALLET"
-                    )
-
-                    continue
-
-
-                wallet = parts[1]
-
-
-                store.add_user_wallet(
-                    chat_id,
-                    wallet
-                )
-
-
-                telegram.send_message(
-                    chat_id,
-                    f"✅ Now tracking:\n{wallet}"
-                )
-
+            telegram.send_message(
+                chat_id,
+                f"✅ Now tracking:\n{wallet}"
+            )
 class PolymarketClient:
     def __init__(self, http: HttpClient) -> None:
         self.http = http
@@ -494,19 +483,17 @@ def poll_once(
 ) -> int:
     alerts = 0
     start = int(time.time()) - 7 * 24 * 60 * 60
-    wallets = store.wallets()
-    user_wallets = []
+    wallets = []
 
     for chat_id in config.telegram_chat_ids:
-        user_wallets.extend(
-            store.get_user_wallets(chat_id)
-        )
+        for wallet in store.get_user_wallets(chat_id):
 
-
-    existing = {
-        row["wallet"]
-        for row in wallets
-    }
+            wallets.append({
+                "wallet": wallet,
+                "username": wallet,
+                "pnl": 0,
+                "x_username": ""
+            })
 
 
     for wallet in user_wallets:
@@ -517,7 +504,8 @@ def poll_once(
                 "wallet": wallet,
                 "username": wallet,
                 "pnl": 0,
-                "x_username": ""
+                "x_username": "",
+                "verified_badge":0
             })
     log(f"Polling {len(wallets)} tracked wallets for new trades >= {money(config.trade_min_usdc)}...")
     for index, wallet_row in enumerate(wallets, start=1):

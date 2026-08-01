@@ -69,6 +69,7 @@ class Config:
     poll_seconds: int
     leaderboard_refresh_seconds: int
     database_path: str
+    max_probability: Decimal
 
     @classmethod
     def from_env(cls, require_chat_id: bool = True) -> "Config":
@@ -87,13 +88,14 @@ class Config:
             leaderboard_limit=max(1, int_env("LEADERBOARD_LIMIT", "1000")),
             trade_min_usdc=decimal_env("TRADE_MIN_USDC", "10000"),
             poll_seconds=max(15, int_env("POLL_SECONDS", "60")),
+            max_probability=decimal_env("MAX_PROBABILITY", "0.80"),
             leaderboard_refresh_seconds=max(300, int_env("LEADERBOARD_REFRESH_SECONDS", "3600")),
             database_path=os.getenv("DATABASE_PATH", "polymarket_bot.sqlite3"),
         )
 
 
 class HttpClient:
-    def __init__(self, timeout: int = 30) -> None:
+    def __init__(self, timeout: int = 120) -> None:
         self.timeout = timeout
         self.context = ssl.create_default_context(cafile=certifi.where())
 
@@ -143,7 +145,7 @@ class PolymarketClient:
     def leaderboard(self, limit: int) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         offset = 0
-        while len(rows) < limit and offset <= 1000:
+        while len(rows) < limit:
             batch_limit = min(50, limit - len(rows))
             log(f"Fetching leaderboard rows {offset + 1}-{offset + batch_limit}...")
             data = self.http.get_json(
@@ -169,7 +171,7 @@ class PolymarketClient:
         params: dict[str, Any] = {
             "user": wallet,
             "type": "TRADE",
-            "limit": 100,
+            "limit": 500,
             "sortBy": "TIMESTAMP",
             "sortDirection": "DESC",
         }
@@ -420,7 +422,13 @@ def poll_once(
             notional = trade.get("usdcSize")
             if notional is None:
                 notional = as_decimal(trade.get("size")) * as_decimal(trade.get("price"))
+
             if as_decimal(notional) < config.trade_min_usdc:
+                continue
+
+            price = as_decimal(trade.get("price"))
+
+            if price >= config.max_probability:
                 continue
             if send_alerts:
                 for chat_id in config.telegram_chat_ids:

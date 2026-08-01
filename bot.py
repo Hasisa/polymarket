@@ -93,7 +93,6 @@ class Config:
             leaderboard_refresh_seconds=max(300, int_env("LEADERBOARD_REFRESH_SECONDS", "3600")),
             database_path=os.getenv("DATABASE_PATH", "polymarket_bot.sqlite3"),
             tracked_traders=tracked_traders,
-            min_pnl_usd=decimal_env("MIN_PNL_USD", "50000"),
         )
 
 

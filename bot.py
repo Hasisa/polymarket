@@ -243,6 +243,17 @@ class Store:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.init_schema()
+    def get_user_wallets(self, chat_id: str) -> list[str]:
+        rows = self.conn.execute(
+        """
+        SELECT wallet
+        FROM user_tracked_wallets
+        WHERE chat_id = ?
+        """,
+        (chat_id,)
+    )
+
+        return [row["wallet"] for row in rows]    
     def all_user_wallets(self):
 
         rows = self.conn.execute(
@@ -524,8 +535,7 @@ def poll_once(
     start = int(time.time()) - 7 * 24 * 60 * 60
     wallets = []
 
-    for chat_id in config.telegram_chat_ids:
-        for wallet in store.get_user_wallets(chat_id):
+    for wallet in store.get_user_wallets(chat_id):
 
             wallet_info = store.get_wallet_info(wallet)
 

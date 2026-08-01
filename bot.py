@@ -124,9 +124,9 @@ class HttpClient:
 
 class TelegramClient:
     def __init__(self, token: str, http: HttpClient) -> None:
-            self.base_url = f"{TELEGRAM_API}/bot{token}"
-            self.http = http
-            self.offset = 0
+        self.base_url = f"{TELEGRAM_API}/bot{token}"
+        self.http = http
+        self.offset = 0
     def send_message(self, chat_id: str, text: str) -> None:
         params = {
             "chat_id": chat_id,
@@ -188,7 +188,8 @@ def handle_commands(telegram, store):
 
             store.add_user_wallet(
                 chat_id,
-                wallet
+                wallet,
+                message["from"].get("username","")
             )
 
             telegram.send_message(
@@ -360,7 +361,13 @@ class Store:
             self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
 
     def upsert_wallet(self, row: dict[str, Any]) -> None:
-        wallet = str(row.get("proxyWallet", "")).lower()
+        wallet = str(
+            row.get("proxyWallet")
+            or row.get("address")
+            or row.get("wallet")
+            or row.get("user")
+            or row.get("owner") 
+        ).lower()
         if not wallet:
             return
         self.conn.execute(
@@ -397,9 +404,12 @@ class Store:
 
     def replace_wallets(self, rows: list[dict[str, Any]]) -> None:
         current_wallets = {
-            str(row.get("proxyWallet", "")).lower()
-            for row in rows
-            if row.get("proxyWallet")
+        str(
+        row.get("proxyWallet")
+        or row.get("address")
+        or row.get("wallet")
+        ).lower()
+        for row in rows
         }
         if not current_wallets:
             return
@@ -515,10 +525,12 @@ def format_trade(wallet_row: sqlite3.Row, trade: dict[str, Any]) -> str:
 
 def refresh_leaderboard(config: Config, polymarket: PolymarketClient, store: Store) -> int:
     qualifying_rows = []
+    
     for row in polymarket.leaderboard(config.leaderboard_limit):
         if as_decimal(row.get("pnl")) < config.min_pnl_usd:
             continue
         qualifying_rows.append(row)
+        print(row)
     store.replace_wallets(qualifying_rows)
     return len(qualifying_rows)
 
@@ -533,27 +545,12 @@ def poll_once(
 ) -> int:
     alerts = 0
     start = int(time.time()) - 7 * 24 * 60 * 60
-    wallets = []
-
-    for wallet in store.all_user_wallets():
-
-        wallet_info = store.get_wallet_info(wallet)
-
-        if wallet_info:
-            wallets.append(wallet_info)
-        else:
-            wallets.append({
-                "wallet": wallet,
-                "username": wallet,
-                "pnl": 0,
-                "x_username": ""
-            })
+    whale_wallets = store.wallets()
     
-    log(f"Polling {len(wallets)} tracked wallets for new trades >= {money(config.trade_min_usdc)}...")
-    for index, wallet_row in enumerate(wallets, start=1):
+    for index, wallet_row in enumerate(whale_wallets, start=1):
         wallet = wallet_row["wallet"]
         if index == 1 or index % 50 == 0:
-            log(f"Polling wallet {index}/{len(wallets)}: {wallet}")
+            log(f"Polling wallet {index}/{len(whale_wallets)}: {wallet}")
         try:
             trades = polymarket.trade_activity(wallet, start=start)
         except RuntimeError as exc:
@@ -568,6 +565,7 @@ def poll_once(
         inserted_keys = store.mark_many_seen(trade_rows)
 
         for trade in sorted_trades:
+            followers = set(store.get_wallet_users(wallet))
             key = trade_key(trade)
             if key not in inserted_keys:
                 continue
@@ -582,20 +580,29 @@ def poll_once(
 
             if as_decimal(notional) < config.trade_min_usdc:
                 continue
+                alerts += 1
 
             price = as_decimal(trade.get("price"))
-
             if price >= config.max_probability:
                 continue
             if send_alerts:
-                for chat_id in store.get_wallet_users(wallet):
-                    telegram.send_message(
-                        chat_id,
-                        format_trade(wallet_row, trade)
-                    )
-                alerts += 1
-                log(f"Sent alert {alerts}: {wallet} {money(notional)}")
-                time.sleep(0.1)
+                    for chat_id in config.telegram_chat_ids:
+            
+                        if chat_id in followers:
+                            telegram.send_message(
+                                chat_id,
+                                "⭐ FOLLOWED WALLET\n\n" +
+                                format_trade(wallet_row, trade)
+                            )
+                        else:
+                            telegram.send_message(
+                                chat_id,
+                                "🐋 WHALE ALERT\n\n" +
+                                format_trade(wallet_row, trade)
+                            )
+        alerts += 1
+        log(f"Sent alert {alerts}: {wallet} {money(notional)}")
+        time.sleep(0.1)
     log(f"Polling cycle finished. Sent {alerts} alerts.")
     return alerts
 

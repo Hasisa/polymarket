@@ -248,11 +248,11 @@ class Store:
     def all_user_wallets(self):
 
         rows = self.conn.execute(
-            """
-            ELECT DISTINCT wallet
-            FROM user_tracked_wallets
-            """
-        )
+        """
+        SELECT wallet
+        FROM user_tracked_wallets
+        """
+    )
 
         return [row["wallet"] for row in rows]
 

@@ -253,7 +253,17 @@ class Store:
     )
 
         return [row["wallet"] for row in rows]
+    def get_wallet_info(self, wallet: str):
+        row = self.conn.execute(
+        """
+        SELECT *
+        FROM tracked_wallets
+        WHERE wallet = ?
+        """,
+        (wallet.lower(),)
+    ).fetchone()
 
+        return row
     def add_user_wallet(self, chat_id: str, wallet: str, username: str = "") -> None:
         self.conn.execute(
             """
@@ -514,14 +524,20 @@ def poll_once(
     start = int(time.time()) - 7 * 24 * 60 * 60
     wallets = []
 
-    for wallet in store.all_user_wallets():
+    for chat_id in config.telegram_chat_ids:
+        for wallet in store.get_user_wallets(chat_id):
 
-        wallets.append({
-            "wallet": wallet,
-            "username": wallet,
-            "pnl": 0,
-            "x_username": ""
-        })
+            wallet_info = store.get_wallet_info(wallet)
+
+            if wallet_info:
+                wallets.append(wallet_info)
+            else:
+                wallets.append({
+                    "wallet": wallet,
+                    "username": wallet,
+                    "pnl": 0,
+                    "x_username": ""
+                })
 
 
     

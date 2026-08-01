@@ -535,21 +535,19 @@ def poll_once(
     start = int(time.time()) - 7 * 24 * 60 * 60
     wallets = []
 
-    for wallet in store.get_user_wallets(chat_id):
+    for wallet in store.all_user_wallets():
 
-            wallet_info = store.get_wallet_info(wallet)
+        wallet_info = store.get_wallet_info(wallet)
 
-            if wallet_info:
-                wallets.append(wallet_info)
-            else:
-                wallets.append({
-                    "wallet": wallet,
-                    "username": wallet,
-                    "pnl": 0,
-                    "x_username": ""
-                })
-
-
+        if wallet_info:
+            wallets.append(wallet_info)
+        else:
+            wallets.append({
+                "wallet": wallet,
+                "username": wallet,
+                "pnl": 0,
+                "x_username": ""
+            })
     
     log(f"Polling {len(wallets)} tracked wallets for new trades >= {money(config.trade_min_usdc)}...")
     for index, wallet_row in enumerate(wallets, start=1):

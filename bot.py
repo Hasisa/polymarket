@@ -70,17 +70,24 @@ class Config:
     leaderboard_refresh_seconds: int
     database_path: str
     max_probability: Decimal
+    tracked_traders: list[str]
 
     @classmethod
     def from_env(cls, require_chat_id: bool = True) -> "Config":
         token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
         chat_ids_raw = os.getenv("TELEGRAM_CHAT_ID", "").strip()
         chat_ids = [c.strip() for c in chat_ids_raw.split(",") if c.strip()]
+        traders_raw = os.getenv("TRACKED_TRADERS", "")
+        tracked_traders = [ 
+            x.strip().lower()
+            for x in traders_raw.split(",")
+            if x.strip()
+            ]
         if not token:
             raise SystemExit("Missing TELEGRAM_BOT_TOKEN in environment or .env")
         if require_chat_id and not chat_ids:
             raise SystemExit("Missing TELEGRAM_CHAT_ID in environment or .env")
-
+        
         return cls(
             telegram_token=token,
             telegram_chat_ids=chat_ids,
@@ -91,6 +98,8 @@ class Config:
             max_probability=decimal_env("MAX_PROBABILITY", "0.80"),
             leaderboard_refresh_seconds=max(300, int_env("LEADERBOARD_REFRESH_SECONDS", "3600")),
             database_path=os.getenv("DATABASE_PATH", "polymarket_bot.sqlite3"),
+            tracked_traders=tracked_traders,
+            min_pnl_usd=decimal_env("MIN_PNL_USD", "50000"),
         )
 
 
@@ -206,7 +215,14 @@ class Store:
                 timestamp INTEGER NOT NULL,
                 inserted_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS seen_trades (
+                trade_key TEXT PRIMARY KEY,
+                wallet TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                inserted_at INTEGER NOT NULL
+            );
             """
+
         )
         self.add_column_if_missing("tracked_wallets", "x_username", "TEXT")
         self.add_column_if_missing("tracked_wallets", "verified_badge", "INTEGER")

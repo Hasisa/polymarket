@@ -232,12 +232,14 @@ class PolymarketClient:
 
 
 class Store:
-    def add_user_wallet(
-        self,
-        chat_id: str,
-        wallet: str,
-        username: str = ""
-    ):
+
+    def __init__(self, path: str) -> None:
+        self.conn = sqlite3.connect(path)
+        self.conn.row_factory = sqlite3.Row
+        self.init_schema()
+
+
+    def add_user_wallet(self, chat_id: str, wallet: str, username: str = "") -> None:
         self.conn.execute(
             """
             INSERT OR IGNORE INTO user_tracked_wallets
@@ -250,80 +252,65 @@ class Store:
                 username,
                 int(time.time())
             )
-    )
+        )
+        self.conn.commit()
 
-    self.conn.commit()
 
+    def get_user_wallets(self, chat_id: str) -> list[str]:
+        rows = self.conn.execute(
+            """
+            SELECT wallet
+            FROM user_tracked_wallets
+            WHERE chat_id = ?
+            """,
+            (chat_id,)
+        )
 
-def get_user_wallets(self, chat_id: str):
-
-    rows = self.conn.execute(
-        """
-        SELECT wallet
-        FROM user_tracked_wallets
-        WHERE chat_id = ?
-        """,
-        (chat_id,)
-    )
-
-    return [
-        row["wallet"]
-        for row in rows
-    ]
+        return [row["wallet"] for row in rows]
 
 
     def remove_user_wallet(self, chat_id: str, wallet: str):
         self.conn.execute(
-        """
-        DELETE FROM user_tracked_wallets
-        WHERE chat_id = ? AND wallet = ?
-        """,
-        (
-            chat_id,
-            wallet.lower()
+            """
+            DELETE FROM user_tracked_wallets
+            WHERE chat_id = ? AND wallet = ?
+            """,
+            (
+                chat_id,
+                wallet.lower()
+            )
         )
-    )
-
         self.conn.commit()
-    def __init__(self, path: str) -> None:
-        self.conn = sqlite3.connect(path)
-        self.conn.row_factory = sqlite3.Row
-        self.init_schema()
 
     def init_schema(self) -> None:
         self.conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS tracked_wallets (
-                wallet TEXT PRIMARY KEY,
-                username TEXT,
-                x_username TEXT,
-                verified_badge INTEGER,
-                pnl REAL NOT NULL,
-                volume REAL,
-                rank TEXT,
-                updated_at INTEGER NOT NULL
-            );
+              """
+        CREATE TABLE IF NOT EXISTS tracked_wallets (
+            wallet TEXT PRIMARY KEY,
+            username TEXT,
+            x_username TEXT,
+            verified_badge INTEGER,
+            pnl REAL NOT NULL,
+            volume REAL,
+            rank TEXT,
+            updated_at INTEGER NOT NULL
+        );
 
-            CREATE TABLE IF NOT EXISTS seen_trades (
-                trade_key TEXT PRIMARY KEY,
-                wallet TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                inserted_at INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS seen_trades (
-                trade_key TEXT PRIMARY KEY,
-                wallet TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                inserted_at INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS user_tracked_wallets (
-                chat_id TEXT NOT NULL,
-                wallet TEXT NOT NULL,
-                username TEXT,
-                added_at INTEGER NOT NULL,
-                PRIMARY KEY(chat_id, wallet)
-            );
-            """
+        CREATE TABLE IF NOT EXISTS seen_trades (
+            trade_key TEXT PRIMARY KEY,
+            wallet TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            inserted_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS user_tracked_wallets (
+            chat_id TEXT NOT NULL,
+            wallet TEXT NOT NULL,
+            username TEXT,
+            added_at INTEGER NOT NULL,
+            PRIMARY KEY(chat_id, wallet)
+        );
+        """
 
         )
         self.add_column_if_missing("tracked_wallets", "x_username", "TEXT")

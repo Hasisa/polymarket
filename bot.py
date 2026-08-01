@@ -70,7 +70,6 @@ class Config:
     leaderboard_refresh_seconds: int
     database_path: str
     max_probability: Decimal
-    tracked_traders: list[str]
 
     @classmethod
     def from_env(cls, require_chat_id: bool = True) -> "Config":

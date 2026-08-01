@@ -77,12 +77,6 @@ class Config:
         token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
         chat_ids_raw = os.getenv("TELEGRAM_CHAT_ID", "").strip()
         chat_ids = [c.strip() for c in chat_ids_raw.split(",") if c.strip()]
-        traders_raw = os.getenv("TRACKED_TRADERS", "")
-        tracked_traders = [ 
-            x.strip().lower()
-            for x in traders_raw.split(",")
-            if x.strip()
-            ]
         if not token:
             raise SystemExit("Missing TELEGRAM_BOT_TOKEN in environment or .env")
         if require_chat_id and not chat_ids:
@@ -145,7 +139,56 @@ class TelegramClient:
 
     def get_updates(self) -> Any:
         return self.http.get_json(f"{self.base_url}/getUpdates")
+    def handle_commands(
+        telegram,
+        store
+):
 
+        updates = telegram.get_updates()
+
+        for update in updates.get("result", []):
+
+            message = update.get("message")
+
+            if not message:
+                continue
+
+
+            text = message.get("text","")
+
+            chat_id = str(
+                message["chat"]["id"]
+            )
+
+
+            if text.startswith("/track"):
+
+                parts = text.split()
+
+
+                if len(parts) < 2:
+
+                    telegram.send_message(
+                        chat_id,
+                        "Usage:\n/track WALLET"
+                    )
+
+                    continue
+
+
+                wallet = parts[1]
+
+
+                store.add_user_wallet(
+                    chat_id,
+                    wallet
+                )
+
+
+                telegram.send_message(
+                    chat_id,
+                    f"✅ Now tracking:\n{wallet}"
+                )
 
 class PolymarketClient:
     def __init__(self, http: HttpClient) -> None:
@@ -190,6 +233,59 @@ class PolymarketClient:
 
 
 class Store:
+    def add_user_wallet(
+        self,
+        chat_id: str,
+        wallet: str,
+        username: str = ""
+    ):
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO user_tracked_wallets
+            (chat_id, wallet, username, added_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                chat_id,
+                wallet.lower(),
+                username,
+                int(time.time())
+            )
+    )
+
+    self.conn.commit()
+
+
+def get_user_wallets(self, chat_id: str):
+
+    rows = self.conn.execute(
+        """
+        SELECT wallet
+        FROM user_tracked_wallets
+        WHERE chat_id = ?
+        """,
+        (chat_id,)
+    )
+
+    return [
+        row["wallet"]
+        for row in rows
+    ]
+
+
+    def remove_user_wallet(self, chat_id: str, wallet: str):
+        self.conn.execute(
+        """
+        DELETE FROM user_tracked_wallets
+        WHERE chat_id = ? AND wallet = ?
+        """,
+        (
+            chat_id,
+            wallet.lower()
+        )
+    )
+
+        self.conn.commit()
     def __init__(self, path: str) -> None:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
@@ -220,6 +316,13 @@ class Store:
                 wallet TEXT NOT NULL,
                 timestamp INTEGER NOT NULL,
                 inserted_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS user_tracked_wallets (
+                chat_id TEXT NOT NULL,
+                wallet TEXT NOT NULL,
+                username TEXT,
+                added_at INTEGER NOT NULL,
+                PRIMARY KEY(chat_id, wallet)
             );
             """
 
@@ -408,6 +511,30 @@ def poll_once(
     alerts = 0
     start = int(time.time()) - 7 * 24 * 60 * 60
     wallets = store.wallets()
+    user_wallets = []
+
+    for chat_id in config.telegram_chat_ids:
+        user_wallets.extend(
+            store.get_user_wallets(chat_id)
+        )
+
+
+    existing = {
+        row["wallet"]
+        for row in wallets
+    }
+
+
+    for wallet in user_wallets:
+
+        if wallet not in existing:
+
+            wallets.append({
+                "wallet": wallet,
+                "username": wallet,
+                "pnl": 0,
+                "x_username": ""
+            })
     log(f"Polling {len(wallets)} tracked wallets for new trades >= {money(config.trade_min_usdc)}...")
     for index, wallet_row in enumerate(wallets, start=1):
         wallet = wallet_row["wallet"]
@@ -498,18 +625,22 @@ def run_bot(config: Config) -> None:
 
     next_leaderboard_refresh = time.time() + config.leaderboard_refresh_seconds
     while not should_stop:
+
         if time.time() >= next_leaderboard_refresh:
             tracked = refresh_leaderboard(config, polymarket, store)
             log(f"Refreshed leaderboard; tracking {tracked} qualifying wallets.")
             next_leaderboard_refresh = time.time() + config.leaderboard_refresh_seconds
+        handle_commands(
+            telegram,
+            store
+        )
 
         alerts = poll_once(
             config,
             polymarket,
             telegram,
             store,
-            send_alerts=True,
-            min_alert_timestamp=min_alert_timestamp,
+            True
         )
         min_alert_timestamp = None
         if alerts:

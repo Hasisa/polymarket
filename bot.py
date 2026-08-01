@@ -135,7 +135,21 @@ class TelegramClient:
         self.http.get_json(f"{self.base_url}/sendMessage", params)
 
     def get_updates(self):
-        return self.http.get_json(f"{self.base_url}/getUpdates")
+
+        params = {}
+
+        if self.offset:
+            params["offset"] = self.offset
+
+        data = self.http.get_json(
+            f"{self.base_url}/getUpdates",
+            params
+        )
+
+        if data.get("result"):
+            self.offset = data["result"][-1]["update_id"] + 1
+
+        return data
 def handle_commands(telegram, store):
 
     updates = telegram.get_updates()
@@ -496,17 +510,7 @@ def poll_once(
             })
 
 
-    for wallet in user_wallets:
-
-        if wallet not in existing:
-
-            wallets.append({
-                "wallet": wallet,
-                "username": wallet,
-                "pnl": 0,
-                "x_username": "",
-                "verified_badge":0
-            })
+    
     log(f"Polling {len(wallets)} tracked wallets for new trades >= {money(config.trade_min_usdc)}...")
     for index, wallet_row in enumerate(wallets, start=1):
         wallet = wallet_row["wallet"]

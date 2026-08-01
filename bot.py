@@ -277,9 +277,7 @@ class Store:
             """
             SELECT chat_id
             FROM user_tracked_wallets
-            WHERE wallet = ?
-            """,
-        (wallet.lower(),)
+            """
         )
 
         return [row["chat_id"] for row in rows]
@@ -512,17 +510,10 @@ def poll_once(
 ) -> int:
     alerts = 0
     start = int(time.time()) - 7 * 24 * 60 * 60
-    wallets = []
-
-    for wallet in store.all_user_wallets():
-
-        wallets.append({
-            "wallet": wallet,
-            "username": wallet,
-            "pnl": 0,
-            "x_username": ""
-        })
-
+    wallets = [
+    dict(row)
+    for row in store.wallets()
+]
 
     
     log(f"Polling {len(wallets)} tracked wallets for new trades >= {money(config.trade_min_usdc)}...")

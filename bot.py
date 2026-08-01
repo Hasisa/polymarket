@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import ssl
+import re
 import json
 import os
 import signal
@@ -123,9 +124,9 @@ class HttpClient:
 
 class TelegramClient:
     def __init__(self, token: str, http: HttpClient) -> None:
-        self.base_url = f"{TELEGRAM_API}/bot{token}"
-        self.http = http
-
+            self.base_url = f"{TELEGRAM_API}/bot{token}"
+            self.http = http
+            self.offset = 0
     def send_message(self, chat_id: str, text: str) -> None:
         params = {
             "chat_id": chat_id,
@@ -153,6 +154,7 @@ class TelegramClient:
 def handle_commands(telegram, store):
 
     updates = telegram.get_updates()
+    
 
     for update in updates.get("result", []):
 
@@ -176,7 +178,12 @@ def handle_commands(telegram, store):
                 )
                 continue
 
-
+            if not re.match("^0x[a-fA-F0-9]{40}$", wallet):
+                telegram.send_message(
+                    chat_id,
+                    "❌ Invalid wallet address"
+                )
+                continue   
             wallet = parts[1].lower()
 
 
@@ -238,7 +245,16 @@ class Store:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.init_schema()
+    def all_user_wallets(self):
 
+        rows = self.conn.execute(
+            """
+            ELECT DISTINCT wallet
+            FROM user_tracked_wallets
+            """
+        )
+
+        return [row["wallet"] for row in rows]
 
     def add_user_wallet(self, chat_id: str, wallet: str, username: str = "") -> None:
         self.conn.execute(
@@ -257,17 +273,18 @@ class Store:
         self.conn.commit()
 
 
-    def get_user_wallets(self, chat_id: str) -> list[str]:
+    def get_wallet_users(self, wallet):
+
         rows = self.conn.execute(
             """
-            SELECT wallet
+            SELECT chat_id
             FROM user_tracked_wallets
-            WHERE chat_id = ?
+            WHERE wallet = ?
             """,
-            (chat_id,)
+        (wallet.lower(),)
         )
 
-        return [row["wallet"] for row in rows]
+        return [row["chat_id"] for row in rows]
 
 
     def remove_user_wallet(self, chat_id: str, wallet: str):
@@ -499,15 +516,14 @@ def poll_once(
     start = int(time.time()) - 7 * 24 * 60 * 60
     wallets = []
 
-    for chat_id in config.telegram_chat_ids:
-        for wallet in store.get_user_wallets(chat_id):
+    for wallet in store.all_user_wallets():
 
-            wallets.append({
-                "wallet": wallet,
-                "username": wallet,
-                "pnl": 0,
-                "x_username": ""
-            })
+        wallets.append({
+            "wallet": wallet,
+            "username": wallet,
+            "pnl": 0,
+            "x_username": ""
+        })
 
 
     
@@ -550,8 +566,11 @@ def poll_once(
             if price >= config.max_probability:
                 continue
             if send_alerts:
-                for chat_id in config.telegram_chat_ids:
-                    telegram.send_message(chat_id, format_trade(wallet_row, trade))
+                for chat_id in store.get_wallet_users(wallet):
+                    telegram.send_message(
+                        chat_id,
+                        format_trade(wallet_row, trade)
+                    )
                 alerts += 1
                 log(f"Sent alert {alerts}: {wallet} {money(notional)}")
                 time.sleep(0.1)

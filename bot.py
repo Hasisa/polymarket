@@ -166,7 +166,6 @@ def handle_commands(telegram, store):
         text = message.get("text", "")
         chat_id = str(message["chat"]["id"])
 
-
         if text.startswith("/track"):
 
             parts = text.split()
@@ -178,20 +177,19 @@ def handle_commands(telegram, store):
                 )
                 continue
 
+            wallet = parts[1].lower()
+
             if not re.match("^0x[a-fA-F0-9]{40}$", wallet):
                 telegram.send_message(
                     chat_id,
                     "❌ Invalid wallet address"
                 )
-                continue   
-            wallet = parts[1].lower()
-
+                continue
 
             store.add_user_wallet(
                 chat_id,
                 wallet
             )
-
 
             telegram.send_message(
                 chat_id,
